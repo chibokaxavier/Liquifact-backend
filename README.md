@@ -52,6 +52,12 @@ Default port: **3001**. After starting:
 
 - Health: [http://localhost:3001/health](http://localhost:3001/health)
 - API info: [http://localhost:3001/api](http://localhost:3001/api)
+- Invoices: [http://localhost:3001/api/invoices](http://localhost:3001/api/invoices)
+  - `GET /api/invoices` - List active invoices
+  - `GET /api/invoices?includeDeleted=true` - List all invoices
+  - `POST /api/invoices` - Create invoice
+  - `DELETE /api/invoices/:id` - Soft delete invoice
+  - `PATCH /api/invoices/:id/restore` - Restore deleted invoice
 
 ---
 

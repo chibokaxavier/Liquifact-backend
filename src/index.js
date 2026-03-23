@@ -13,6 +13,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// In-memory storage for invoices (Issue #25)
+let invoices = [];
+
 /**
  * Health check endpoint.
  * Returns the current status and version of the service.
@@ -22,7 +25,7 @@ app.use(express.json());
  * @returns {void}
  */
 app.get('/health', (req, res) => {
-  res.json({
+  return res.json({
     status: 'ok',
     service: 'liquifact-api',
     version: '0.1.0',
@@ -39,7 +42,7 @@ app.get('/health', (req, res) => {
  * @returns {void}
  */
 app.get('/api', (req, res) => {
-  res.json({
+  return res.json({
     name: 'LiquiFact API',
     description: 'Global Invoice Liquidity Network on Stellar',
     endpoints: {
@@ -52,31 +55,109 @@ app.get('/api', (req, res) => {
 
 /**
  * Lists tokenized invoices.
- * Placeholder for future database integration.
+ * Filters out soft-deleted records unless explicitly requested.
  * 
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
 app.get('/api/invoices', (req, res) => {
-  res.json({
-    data: [],
-    message: 'Invoice service will list tokenized invoices here.',
+  const includeDeleted = req.query.includeDeleted === 'true';
+  const filteredInvoices = includeDeleted 
+    ? invoices 
+    : invoices.filter(inv => !inv.deletedAt);
+
+  return res.json({
+    data: filteredInvoices,
+    message: includeDeleted ? 'Showing all invoices (including deleted).' : 'Showing active invoices.',
   });
 });
 
 /**
  * Uploads and tokenizes a new invoice.
- * Placeholder for future verification and Stellar integration.
+ * Generates a unique ID and sets the creation timestamp.
  * 
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
 app.post('/api/invoices', (req, res) => {
-  res.status(201).json({
-    data: { id: 'placeholder', status: 'pending_verification' },
-    message: 'Invoice upload will be implemented with verification and tokenization.',
+  const { amount, customer } = req.body;
+  
+  if (!amount || !customer) {
+    return res.status(400).json({ error: 'Amount and customer are required' });
+  }
+
+  const newInvoice = {
+    id: `inv_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    amount,
+    customer,
+    status: 'pending_verification',
+    createdAt: new Date().toISOString(),
+    deletedAt: null,
+  };
+
+  invoices.push(newInvoice);
+
+  return res.status(201).json({
+    data: newInvoice,
+    message: 'Invoice uploaded successfully.',
+  });
+});
+
+/**
+ * Performs a soft delete on an invoice.
+ * Sets the deletedAt timestamp instead of removing the record.
+ * 
+ * @param {import('express').Request} req - The Express request object.
+ * @param {import('express').Response} res - The Express response object.
+ * @returns {void}
+ */
+app.delete('/api/invoices/:id', (req, res) => {
+  const { id } = req.params;
+  const invoiceIndex = invoices.findIndex(inv => inv.id === id);
+
+  if (invoiceIndex === -1) {
+    return res.status(404).json({ error: 'Invoice not found' });
+  }
+
+  if (invoices[invoiceIndex].deletedAt) {
+    return res.status(400).json({ error: 'Invoice is already deleted' });
+  }
+
+  invoices[invoiceIndex].deletedAt = new Date().toISOString();
+
+  return res.json({
+    message: 'Invoice soft-deleted successfully.',
+    data: invoices[invoiceIndex],
+  });
+});
+
+/**
+ * Restores a soft-deleted invoice.
+ * Resets the deletedAt timestamp to null.
+ * 
+ * @param {import('express').Request} req - The Express request object.
+ * @param {import('express').Response} res - The Express response object.
+ * @returns {void}
+ */
+app.patch('/api/invoices/:id/restore', (req, res) => {
+  const { id } = req.params;
+  const invoiceIndex = invoices.findIndex(inv => inv.id === id);
+
+  if (invoiceIndex === -1) {
+    return res.status(404).json({ error: 'Invoice not found' });
+  }
+
+  if (!invoices[invoiceIndex].deletedAt) {
+    return res.status(400).json({ error: 'Invoice is not deleted' });
+  }
+
+  invoices[invoiceIndex].deletedAt = null;
+
+  return res.json({
+    message: 'Invoice restored successfully.',
+    data: invoices[invoiceIndex],
   });
 });
 
@@ -90,7 +171,7 @@ app.post('/api/invoices', (req, res) => {
  */
 app.get('/api/escrow/:invoiceId', (req, res) => {
   const { invoiceId } = req.params;
-  res.json({
+  return res.json({
     data: { invoiceId, status: 'not_found', fundedAmount: 0 },
     message: 'Escrow state will be read from Soroban contract.',
   });
@@ -101,13 +182,14 @@ app.get('/api/escrow/:invoiceId', (req, res) => {
  * 
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
+ * @param {import('express').NextFunction} next - The next middleware function.
  * @returns {void}
  */
 app.use((req, res, next) => {
   if (req.path === '/error-test-trigger') {
     return next(new Error('Test error'));
   }
-  res.status(404).json({ error: 'Not found', path: req.path });
+  return res.status(404).json({ error: 'Not found', path: req.path });
 });
 
 /**
@@ -122,7 +204,7 @@ app.use((req, res, next) => {
  */
 app.use((err, req, res, _next) => {
   console.error(err);
-  res.status(500).json({ error: 'Internal server error' });
+  return res.status(500).json({ error: 'Internal server error' });
 });
 
 /**
@@ -132,14 +214,24 @@ app.use((err, req, res, _next) => {
  */
 const startServer = () => {
   const server = app.listen(PORT, () => {
-    console.log(`LiquiFact API running at http://localhost:${PORT}`);
+    console.warn(`LiquiFact API running at http://localhost:${PORT}`);
   });
   return server;
 };
 
-// Export app for testing
+/**
+ * Resets the in-memory store (for testing purposes).
+ * 
+ * @returns {void}
+ */
+const resetStore = () => {
+  invoices = [];
+};
+
+// Start server if not in test mode
 if (process.env.NODE_ENV !== 'test') {
   startServer();
 }
 
-module.exports = { app, startServer };
+// Export app and state for testing
+module.exports = { app, startServer, resetStore };
