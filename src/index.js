@@ -9,6 +9,7 @@ require('dotenv').config();
 
 const asyncHandler = require('./utils/asyncHandler');
 const errorHandler = require('./middleware/errorHandler');
+const { callSorobanContract } = require('./services/soroban');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -107,6 +108,26 @@ app.get(
     throw new Error('Test async error');
   })
 );
+// Placeholder: Escrow (to be wired to Soroban)
+app.get('/api/escrow/:invoiceId', async (req, res) => {
+  const { invoiceId } = req.params;
+
+  try {
+    // Simulated remote contract call
+    const operation = async () => {
+      return { invoiceId, status: 'not_found', fundedAmount: 0 };
+    };
+
+    const data = await callSorobanContract(operation);
+    
+    res.json({
+      data,
+      message: 'Escrow state read from Soroban contract via robust integration wrapper.',
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Error fetching escrow state' });
+  }
+});
 
 /**
  * 404 Handler (Not Found)
