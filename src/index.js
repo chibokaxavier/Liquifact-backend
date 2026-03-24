@@ -1,15 +1,20 @@
+'use strict';
+
 /**
  * LiquiFact API Gateway
- * Express server for invoice financing, auth, and Stellar integration.
+ * Express app configuration for invoice financing, auth, and Stellar integration.
+ * Server startup lives in server.js so this module can be imported cleanly in tests.
  */
 
 const express = require('express');
 const cors = require('cors');
+const { createSecurityMiddleware } = require('./middleware/security');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 
+// Security headers — applied first so every response is protected
+app.use(createSecurityMiddleware());
 app.use(cors());
 app.use(express.json());
 
@@ -60,15 +65,26 @@ app.get('/api/escrow/:invoiceId', (req, res) => {
   });
 });
 
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found', path: req.path });
 });
 
-app.use((err, req, res, _next) => {
+/**
+ * Express error handler — catches errors forwarded via next(err).
+ * Returns a generic 500 response to avoid leaking internal details.
+ *
+ * @param {Error}            err  - The error object
+ * @param {express.Request}  req  - Express request
+ * @param {express.Response} res  - Express response
+ * @param {express.NextFunction} _next - Unused (required by Express signature)
+ */
+function errorHandler(err, req, res, _next) {
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
-});
+}
 
-app.listen(PORT, () => {
-  console.log(`LiquiFact API running at http://localhost:${PORT}`);
-});
+app.use(errorHandler);
+
+module.exports = app;
+module.exports.errorHandler = errorHandler;

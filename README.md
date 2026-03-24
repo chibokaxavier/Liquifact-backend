@@ -44,6 +44,7 @@ Part of the LiquiFact stack: **frontend** (Next.js) | **backend** (this repo) | 
 | `npm run dev`  | Start API with watch mode      |
 | `npm run start`| Start API (production-style)  |
 | `npm run lint` | Run ESLint on `src/`          |
+| `npm test`     | Run tests with coverage report |
 
 Default port: **3001**. After starting:
 
@@ -57,11 +58,35 @@ Default port: **3001**. After starting:
 ```
 liquifact-backend/
 ├── src/
-│   └── index.js    # Express app, routes (health, invoices, escrow)
-├── .env.example   # Env template (PORT, Stellar, DB placeholders)
+│   ├── middleware/
+│   │   └── security.js   # Helmet security header configuration
+│   ├── index.js          # Express app, routes, error handler (importable for tests)
+│   ├── index.test.js     # Integration + unit tests (Jest + supertest)
+│   └── server.js         # Server entry point — binds app to PORT
+├── .env.example          # Env template (PORT, Stellar, DB placeholders)
 ├── eslint.config.js
 └── package.json
 ```
+
+---
+
+## Security
+
+HTTP response headers are hardened via [Helmet](https://helmetjs.github.io/) (`src/middleware/security.js`). Applied headers include:
+
+| Header | Value / Policy |
+|--------|----------------|
+| `Content-Security-Policy` | Restricts all resource loading to `'self'`; blocks objects and frames |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains; preload` |
+| `X-Frame-Options` | `DENY` — prevents clickjacking |
+| `X-Content-Type-Options` | `nosniff` — disables MIME sniffing |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Cross-Origin-Opener-Policy` | `same-origin` |
+| `Cross-Origin-Resource-Policy` | `same-origin` |
+| `Cross-Origin-Embedder-Policy` | `require-corp` |
+| `X-DNS-Prefetch-Control` | `off` |
+| `X-Permitted-Cross-Domain-Policies` | `none` |
+| `X-Powered-By` | Removed (technology fingerprinting prevention) |
 
 ---
 

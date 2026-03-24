@@ -10,5 +10,8 @@ node_modules/
 npm-debug.log*
 *.log
 
+# Test coverage
+coverage/
+
 # OS
 .DS_Store
