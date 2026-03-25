@@ -4,6 +4,8 @@
  */
 
 require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
 const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
 const { authenticateToken } = require('./middleware/auth');
 
@@ -11,6 +13,7 @@ const asyncHandler = require('./utils/asyncHandler');
 const errorHandler = require('./middleware/errorHandler');
 const { callSorobanContract } = require('./services/soroban');
 
+const app = express();
 const PORT = process.env.PORT || 3001;
 
 /**
@@ -18,6 +21,7 @@ const PORT = process.env.PORT || 3001;
  */
 app.use(cors());
 app.use(express.json());
+app.use(globalLimiter);
 
 // In-memory storage for invoices (Issue #25)
 let invoices = [];
@@ -87,7 +91,7 @@ app.get('/api/invoices', (req, res) => {
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
-app.post('/api/invoices', (req, res) => {
+app.post('/api/invoices', authenticateToken, sensitiveLimiter, (req, res) => {
   const { amount, customer } = req.body;
   
   if (!amount || !customer) {
@@ -119,7 +123,7 @@ app.post('/api/invoices', (req, res) => {
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
-app.delete('/api/invoices/:id', (req, res) => {
+app.delete('/api/invoices/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
   const invoiceIndex = invoices.findIndex(inv => inv.id === id);
 
@@ -150,7 +154,7 @@ app.delete('/api/invoices/:id', (req, res) => {
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
-app.patch('/api/invoices/:id/restore', (req, res) => {
+app.patch('/api/invoices/:id/restore', authenticateToken, (req, res) => {
   const { id } = req.params;
   const invoiceIndex = invoices.findIndex(inv => inv.id === id);
 
@@ -181,7 +185,7 @@ app.patch('/api/invoices/:id/restore', (req, res) => {
  * @param {import('express').Response} res - The Express response object.
  * @returns {Promise<void>}
  */
-app.get('/api/escrow/:invoiceId', async (req, res) => {
+app.get('/api/escrow/:invoiceId', authenticateToken, async (req, res) => {
   const { invoiceId } = req.params;
 
   try {
@@ -203,6 +207,16 @@ app.get('/api/escrow/:invoiceId', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message || 'Error fetching escrow state' });
   }
+});
+
+/**
+ * Simulated escrow operations (e.g. funding).
+ */
+app.post('/api/escrow', authenticateToken, sensitiveLimiter, (req, res) => {
+    res.json({
+        data: { status: 'funded' },
+        message: 'Escrow operation simulated.'
+    });
 });
 
 /**

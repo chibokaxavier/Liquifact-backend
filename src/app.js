@@ -8,6 +8,10 @@ const {
   isCorsOriginRejectedError,
 } = require('./config/cors');
 
+const invoiceService = require('./services/invoice.service');
+const { validateInvoiceQueryParams } = require('./utils/validators');
+const asyncHandler = require('./utils/asyncHandler');
+
 /**
  * Returns a 403 JSON response only for the dedicated blocked-origin CORS error.
  *
@@ -74,13 +78,26 @@ function createApp() {
     });
   });
 
-  // Placeholder: Invoices (to be wired to Invoice Service + DB)
-  app.get('/api/invoices', (req, res) => {
+  /**
+   * Retrieves invoices with support for dynamic filtering and sorting.
+   * 
+   * Supported filters: status, smeId, buyerId, dateFrom, dateTo
+   * Supported sorting: sortBy (amount, date), order (asc, desc)
+   */
+  app.get('/api/invoices', asyncHandler(async (req, res) => {
+    const { isValid, errors, validatedParams } = validateInvoiceQueryParams(req.query);
+
+    if (!isValid) {
+      return res.status(400).json({ errors });
+    }
+
+    const invoices = await invoiceService.getInvoices(validatedParams);
+    
     res.json({
-      data: [],
-      message: 'Invoice service will list tokenized invoices here.',
+      data: invoices,
+      message: 'Invoices retrieved successfully.',
     });
-  });
+  }));
 
   app.post('/api/invoices', (req, res) => {
     res.status(201).json({

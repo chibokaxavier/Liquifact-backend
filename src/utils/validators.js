@@ -28,7 +28,7 @@ function validateInvoiceQueryParams(query) {
   } = query;
 
   // Validate status
-  if (status) {
+  if (status !== undefined) {
     const validStatuses = ['paid', 'pending', 'overdue'];
     if (validStatuses.includes(status)) {
       validatedParams.filters.status = status;
@@ -38,7 +38,7 @@ function validateInvoiceQueryParams(query) {
   }
 
   // Validate SME ID (assuming non-empty string)
-  if (smeId) {
+  if (smeId !== undefined) {
     if (typeof smeId === 'string' && smeId.trim().length > 0) {
       validatedParams.filters.smeId = smeId;
     } else {
@@ -47,7 +47,7 @@ function validateInvoiceQueryParams(query) {
   }
 
   // Validate Buyer ID (assuming non-empty string)
-  if (buyerId) {
+  if (buyerId !== undefined) {
     if (typeof buyerId === 'string' && buyerId.trim().length > 0) {
       validatedParams.filters.buyerId = buyerId;
     } else {
@@ -57,7 +57,7 @@ function validateInvoiceQueryParams(query) {
 
   // Validate Dates
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-  if (dateFrom) {
+  if (dateFrom !== undefined) {
     if (dateRegex.test(dateFrom) && !isNaN(Date.parse(dateFrom))) {
       validatedParams.filters.dateFrom = dateFrom;
     } else {
@@ -65,7 +65,7 @@ function validateInvoiceQueryParams(query) {
     }
   }
 
-  if (dateTo) {
+  if (dateTo !== undefined) {
     if (dateRegex.test(dateTo) && !isNaN(Date.parse(dateTo))) {
       validatedParams.filters.dateTo = dateTo;
     } else {
@@ -74,7 +74,7 @@ function validateInvoiceQueryParams(query) {
   }
 
   // Validate sortBy
-  if (sortBy) {
+  if (sortBy !== undefined) {
     const validSortFields = ['amount', 'date'];
     if (validSortFields.includes(sortBy)) {
       validatedParams.sorting.sortBy = sortBy;
@@ -84,7 +84,7 @@ function validateInvoiceQueryParams(query) {
   }
 
   // Validate order
-  if (order) {
+  if (order !== undefined) {
     const lowerOrder = order.toLowerCase();
     if (['asc', 'desc'].includes(lowerOrder)) {
       validatedParams.sorting.order = lowerOrder;

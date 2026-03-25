@@ -53,8 +53,9 @@ Default port: **3001**. After starting:
 - Health: [http://localhost:3001/health](http://localhost:3001/health)
 - API info: [http://localhost:3001/api](http://localhost:3001/api)
 - Invoices: [http://localhost:3001/api/invoices](http://localhost:3001/api/invoices)
-  - `GET /api/invoices` - List active invoices
-  - `GET /api/invoices?includeDeleted=true` - List all invoices
+  - `GET /api/invoices` - List active invoices with filtering and sorting
+    - Filters: `status` (paid, pending, overdue), `smeId`, `buyerId`, `dateFrom`, `dateTo` (YYYY-MM-DD)
+    - Sorting: `sortBy` (amount, date), `order` (asc, desc)
   - `POST /api/invoices` - Create invoice
   - `DELETE /api/invoices/:id` - Soft delete invoice
   - `PATCH /api/invoices/:id/restore` - Restore deleted invoice
@@ -132,10 +133,16 @@ liquifact-backend/
 ├── src/
 │   ├── config/
 │   │   └── cors.js     # CORS allowlist parsing and policy
+│   ├── db/
+│   │   └── knex.js     # Database connection and configuration
 │   ├── services/
+│   │   ├── invoice.service.js # Invoice business logic and DB access
 │   │   └── soroban.js  # Contract interaction wrappers
 │   ├── utils/
-│   │   └── retry.js    # Exponential backoff utility
+│   │   ├── asyncHandler.js # Async route wrapper
+│   │   ├── queryBuilder.js # Reusable DB query builder
+│   │   ├── retry.js    # Exponential backoff utility
+│   │   └── validators.js # Input validation utilities
 │   ├── app.js          # Express app, middleware, routes
 │   └── index.js        # Runtime bootstrap
 ├── .env.example        # Env template
