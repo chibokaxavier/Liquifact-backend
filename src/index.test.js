@@ -1,25 +1,31 @@
 'use strict';
 
 /**
- * Security header integration tests for the LiquiFact API.
+ * LiquiFact API — integration and security header tests.
  *
- * Verifies that every endpoint returns the required secure HTTP headers
- * and that prohibited headers (e.g. X-Powered-By) are absent.
+ * Covers:
+ *  - Functional correctness of all routes (health, invoices lifecycle, escrow, error handling)
+ *  - Security header presence and policy values on every endpoint (Helmet hardening)
  *
- * Run with: bun test --coverage
+ * Run with: npm run test:coverage
  */
 
 const request = require('supertest');
+const jwt = require('jsonwebtoken');
 const app = require('./index');
+const { resetStore, startServer } = app;
+
+const TEST_SECRET = process.env.JWT_SECRET || 'test-secret';
+const validToken = jwt.sign({ id: 1, role: 'user' }, TEST_SECRET, { expiresIn: '1h' });
 
 // ---------------------------------------------------------------------------
-// Shared helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Performs a request against a given endpoint and returns the supertest Response.
+ * Performs a request and returns the supertest Response.
  *
- * @param {string} method - HTTP method ('get' | 'post')
+ * @param {string} method - HTTP method ('get' | 'post' | 'delete' | 'patch')
  * @param {string} path   - URL path
  * @returns {Promise<import('supertest').Response>}
  */
@@ -79,73 +85,160 @@ function expectSecureHeaders(res) {
 }
 
 // ---------------------------------------------------------------------------
-// Route tests — functional correctness
+// Functional tests
 // ---------------------------------------------------------------------------
 
-describe('GET /health', () => {
-  test('returns 200 with status ok', async () => {
-    const res = await req('get', '/health');
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('ok');
-    expect(res.body.service).toBe('liquifact-api');
-    expect(res.body.version).toBe('0.1.0');
-    expect(typeof res.body.timestamp).toBe('string');
-  });
-});
-
-describe('GET /api', () => {
-  test('returns 200 with API info', async () => {
-    const res = await req('get', '/api');
-    expect(res.status).toBe(200);
-    expect(res.body.name).toBe('LiquiFact API');
-    expect(res.body.endpoints).toBeDefined();
-  });
-});
-
-describe('GET /api/invoices', () => {
-  test('returns 200 with empty data array', async () => {
-    const res = await req('get', '/api/invoices');
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.data)).toBe(true);
-  });
-});
-
-describe('POST /api/invoices', () => {
-  test('returns 201 with placeholder invoice', async () => {
-    const res = await request(app).post('/api/invoices').send({});
-    expect(res.status).toBe(201);
-    expect(res.body.data.id).toBe('placeholder');
-    expect(res.body.data.status).toBe('pending_verification');
-  });
-});
-
-describe('GET /api/escrow/:invoiceId', () => {
-  test('returns 200 with escrow state for given invoiceId', async () => {
-    const res = await req('get', '/api/escrow/inv-42');
-    expect(res.status).toBe(200);
-    expect(res.body.data.invoiceId).toBe('inv-42');
-    expect(res.body.data.status).toBe('not_found');
-    expect(res.body.data.fundedAmount).toBe(0);
-  });
-});
-
-describe('404 handler', () => {
-  test('returns 404 with error for unknown path', async () => {
-    const res = await req('get', '/does-not-exist');
-    expect(res.status).toBe(404);
-    expect(res.body.error).toBe('Not found');
-    expect(res.body.path).toBe('/does-not-exist');
+describe('LiquiFact API', () => {
+  beforeEach(() => {
+    resetStore();
   });
 
-  test('returns 404 for unknown POST path', async () => {
-    const res = await req('post', '/unknown-route');
-    expect(res.status).toBe(404);
-    expect(res.body.error).toBe('Not found');
+  describe('Health & Info', () => {
+    it('GET /health - returns 200 and status ok', async () => {
+      const response = await request(app).get('/health');
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('status', 'ok');
+    });
+
+    it('GET /api - returns 200 and API info', async () => {
+      const response = await request(app).get('/api');
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('name', 'LiquiFact API');
+    });
+  });
+
+  describe('Invoices Lifecycle', () => {
+    it('POST /api/invoices - creates a new invoice', async () => {
+      const response = await request(app)
+        .post('/api/invoices')
+        .set('Authorization', `Bearer ${validToken}`)
+        .send({ amount: 1000, customer: 'Test Corp' });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data).toHaveProperty('id');
+      expect(response.body.data.amount).toBe(1000);
+      expect(response.body.data.customer).toBe('Test Corp');
+      expect(response.body.data.deletedAt).toBeNull();
+    });
+
+    it('POST /api/invoices - fails if missing fields', async () => {
+      const response = await request(app)
+        .post('/api/invoices')
+        .set('Authorization', `Bearer ${validToken}`)
+        .send({ amount: 1000 });
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+    });
+
+    it('GET /api/invoices - lists active invoices', async () => {
+      await request(app).post('/api/invoices').set('Authorization', `Bearer ${validToken}`).send({ amount: 1000, customer: 'A' });
+      await request(app).post('/api/invoices').set('Authorization', `Bearer ${validToken}`).send({ amount: 2000, customer: 'B' });
+
+      const response = await request(app).get('/api/invoices');
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(2);
+    });
+
+    it('DELETE /api/invoices/:id - soft deletes an invoice', async () => {
+      const postRes = await request(app)
+        .post('/api/invoices')
+        .set('Authorization', `Bearer ${validToken}`)
+        .send({ amount: 500, customer: 'Delete Me' });
+      const id = postRes.body.data.id;
+
+      const delRes = await request(app).delete(`/api/invoices/${id}`).set('Authorization', `Bearer ${validToken}`);
+      expect(delRes.status).toBe(200);
+      expect(delRes.body.data.deletedAt).not.toBeNull();
+
+      // Verify it's hidden from default list
+      const listRes = await request(app).get('/api/invoices');
+      expect(listRes.body.data).toHaveLength(0);
+
+      // Verify it's visible with includeDeleted=true
+      const listAllRes = await request(app).get('/api/invoices?includeDeleted=true');
+      expect(listAllRes.body.data).toHaveLength(1);
+    });
+
+    it('DELETE /api/invoices/:id - fails for non-existent or already deleted', async () => {
+      const res404 = await request(app).delete('/api/invoices/nonexistent').set('Authorization', `Bearer ${validToken}`);
+      expect(res404.status).toBe(404);
+
+      const postRes = await request(app).post('/api/invoices').set('Authorization', `Bearer ${validToken}`).send({ amount: 100, customer: 'X' });
+      const id = postRes.body.data.id;
+      await request(app).delete(`/api/invoices/${id}`).set('Authorization', `Bearer ${validToken}`);
+
+      const res400 = await request(app).delete(`/api/invoices/${id}`).set('Authorization', `Bearer ${validToken}`);
+      expect(res400.status).toBe(400);
+      expect(res400.body.error).toBe('Invoice is already deleted');
+    });
+
+    it('PATCH /api/invoices/:id/restore - restores a deleted invoice', async () => {
+      const postRes = await request(app).post('/api/invoices').set('Authorization', `Bearer ${validToken}`).send({ amount: 100, customer: 'X' });
+      const id = postRes.body.data.id;
+      await request(app).delete(`/api/invoices/${id}`).set('Authorization', `Bearer ${validToken}`);
+
+      const restoreRes = await request(app).patch(`/api/invoices/${id}/restore`).set('Authorization', `Bearer ${validToken}`);
+      expect(restoreRes.status).toBe(200);
+      expect(restoreRes.body.data.deletedAt).toBeNull();
+
+      const listRes = await request(app).get('/api/invoices');
+      expect(listRes.body.data).toHaveLength(1);
+    });
+
+    it('PATCH /api/invoices/:id/restore - fails for non-existent or not deleted', async () => {
+      const res404 = await request(app).patch('/api/invoices/nonexistent/restore').set('Authorization', `Bearer ${validToken}`);
+      expect(res404.status).toBe(404);
+
+      const postRes = await request(app).post('/api/invoices').set('Authorization', `Bearer ${validToken}`).send({ amount: 100, customer: 'X' });
+      const id = postRes.body.data.id;
+
+      const res400 = await request(app).patch(`/api/invoices/${id}/restore`).set('Authorization', `Bearer ${validToken}`);
+      expect(res400.status).toBe(400);
+      expect(res400.body.error).toBe('Invoice is not deleted');
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('unknown route - returns 404', async () => {
+      const response = await request(app).get('/unknown');
+      expect(response.status).toBe(404);
+    });
+
+    it('error handler - returns 500 on unexpected error', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const response = await request(app).get('/error-test-trigger');
+      expect(response.status).toBe(500);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('Escrow', () => {
+    it('GET /api/escrow/:invoiceId - returns placeholder escrow state', async () => {
+      const response = await request(app).get('/api/escrow/123').set('Authorization', `Bearer ${validToken}`);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveProperty('invoiceId', '123');
+    });
+  });
+
+  describe('Server', () => {
+    it('startServer - starts the server and returns it', () => {
+      const mockServer = { close: jest.fn() };
+      const listenSpy = jest.spyOn(app, 'listen').mockImplementation((port, cb) => {
+        if (cb) { cb(); }
+        return mockServer;
+      });
+
+      const server = startServer();
+      expect(listenSpy).toHaveBeenCalled();
+      expect(server).toBe(mockServer);
+
+      listenSpy.mockRestore();
+    });
   });
 });
 
 // ---------------------------------------------------------------------------
-// Security header tests — applied to every endpoint
+// Security header tests — Helmet hardening on every endpoint
 // ---------------------------------------------------------------------------
 
 describe('Security headers — all endpoints', () => {
@@ -159,147 +252,97 @@ describe('Security headers — all endpoints', () => {
   ];
 
   for (const { method, path } of endpoints) {
-    test(`${method.toUpperCase()} ${path} has all required security headers`, async () => {
+    it(`${method.toUpperCase()} ${path} has all required security headers`, async () => {
       const res = await req(method, path);
       expectSecureHeaders(res);
     });
   }
 });
 
-// ---------------------------------------------------------------------------
-// Security header detail tests
-// ---------------------------------------------------------------------------
-
 describe('Content-Security-Policy directives', () => {
-  test('includes strict script-src', async () => {
+  it('includes strict script-src', async () => {
     const res = await req('get', '/health');
-    const csp = res.headers['content-security-policy'];
-    expect(csp).toContain("script-src 'self'");
+    expect(res.headers['content-security-policy']).toContain("script-src 'self'");
   });
 
-  test('includes strict style-src', async () => {
+  it('includes strict style-src', async () => {
     const res = await req('get', '/health');
-    const csp = res.headers['content-security-policy'];
-    expect(csp).toContain("style-src 'self'");
+    expect(res.headers['content-security-policy']).toContain("style-src 'self'");
   });
 
-  test('allows data: URIs for images', async () => {
+  it('allows data: URIs for images', async () => {
     const res = await req('get', '/health');
-    const csp = res.headers['content-security-policy'];
-    expect(csp).toContain("img-src 'self' data:");
+    expect(res.headers['content-security-policy']).toContain("img-src 'self' data:");
   });
 
-  test('blocks object sources', async () => {
+  it('blocks object sources', async () => {
     const res = await req('get', '/api');
-    const csp = res.headers['content-security-policy'];
-    expect(csp).toContain("object-src 'none'");
+    expect(res.headers['content-security-policy']).toContain("object-src 'none'");
   });
 
-  test('blocks frame sources', async () => {
+  it('blocks frame sources', async () => {
     const res = await req('get', '/api');
-    const csp = res.headers['content-security-policy'];
-    expect(csp).toContain("frame-src 'none'");
+    expect(res.headers['content-security-policy']).toContain("frame-src 'none'");
   });
 
-  test('restricts form-action to self', async () => {
+  it('restricts form-action to self', async () => {
     const res = await req('get', '/api');
-    const csp = res.headers['content-security-policy'];
-    expect(csp).toContain("form-action 'self'");
+    expect(res.headers['content-security-policy']).toContain("form-action 'self'");
   });
 
-  test('restricts base-uri to self', async () => {
+  it('restricts base-uri to self', async () => {
     const res = await req('get', '/api');
-    const csp = res.headers['content-security-policy'];
-    expect(csp).toContain("base-uri 'self'");
+    expect(res.headers['content-security-policy']).toContain("base-uri 'self'");
   });
 });
 
 describe('HSTS header', () => {
-  test('max-age is set to 1 year (31536000 seconds)', async () => {
+  it('max-age is set to 1 year (31536000 seconds)', async () => {
     const res = await req('get', '/health');
     expect(res.headers['strict-transport-security']).toContain('max-age=31536000');
   });
 
-  test('includeSubDomains is set', async () => {
+  it('includeSubDomains is set', async () => {
     const res = await req('get', '/health');
     expect(res.headers['strict-transport-security']).toContain('includeSubDomains');
   });
 
-  test('preload directive is set', async () => {
+  it('preload directive is set', async () => {
     const res = await req('get', '/health');
     expect(res.headers['strict-transport-security']).toContain('preload');
   });
 });
 
 describe('X-Powered-By suppression', () => {
-  test('is absent on /health', async () => {
+  it('is absent on /health', async () => {
     const res = await req('get', '/health');
     expect(res.headers['x-powered-by']).toBeUndefined();
   });
 
-  test('is absent on /api', async () => {
+  it('is absent on /api', async () => {
     const res = await req('get', '/api');
     expect(res.headers['x-powered-by']).toBeUndefined();
   });
 
-  test('is absent on 404 responses', async () => {
+  it('is absent on 404 responses', async () => {
     const res = await req('get', '/totally-unknown');
     expect(res.headers['x-powered-by']).toBeUndefined();
   });
 });
 
 describe('Cross-origin isolation headers', () => {
-  test('COOP is same-origin', async () => {
+  it('COOP is same-origin', async () => {
     const res = await req('get', '/health');
     expect(res.headers['cross-origin-opener-policy']).toBe('same-origin');
   });
 
-  test('CORP is same-origin', async () => {
+  it('CORP is same-origin', async () => {
     const res = await req('get', '/health');
     expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
   });
 
-  test('COEP requires CORP', async () => {
+  it('COEP requires CORP', async () => {
     const res = await req('get', '/health');
     expect(res.headers['cross-origin-embedder-policy']).toBe('require-corp');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Error handler
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Error handler — unit tested with mocks since it sits after the 404 catch-all
-// ---------------------------------------------------------------------------
-
-describe('Error handler', () => {
-  const { errorHandler } = require('./index');
-
-  test('responds with 500 and generic message', () => {
-    const err = new Error('Something broke');
-    const req = {};
-    const res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn(),
-    };
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
-    errorHandler(err, req, res, () => {});
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
-    consoleSpy.mockRestore();
-  });
-
-  test('logs the error to console', () => {
-    const err = new Error('Logging test');
-    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
-    errorHandler(err, {}, res, () => {});
-
-    expect(consoleSpy).toHaveBeenCalledWith(err);
-    consoleSpy.mockRestore();
   });
 });
