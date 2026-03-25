@@ -55,9 +55,9 @@ function expectSecureHeaders(res) {
   // Content-Security-Policy — must restrict to 'self'
   const csp = res.headers['content-security-policy'];
   expect(csp).toBeDefined();
-  expect(csp).toContain("default-src 'self'");
-  expect(csp).toContain("object-src 'none'");
-  expect(csp).toContain("frame-src 'none'");
+  expect(csp).toContain('default-src \'self\'');
+  expect(csp).toContain('object-src \'none\'');
+  expect(csp).toContain('frame-src \'none\'');
 
   // Referrer-Policy
   expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
@@ -262,37 +262,37 @@ describe('Security headers — all endpoints', () => {
 describe('Content-Security-Policy directives', () => {
   it('includes strict script-src', async () => {
     const res = await req('get', '/health');
-    expect(res.headers['content-security-policy']).toContain("script-src 'self'");
+    expect(res.headers['content-security-policy']).toContain('script-src \'self\'');
   });
 
   it('includes strict style-src', async () => {
     const res = await req('get', '/health');
-    expect(res.headers['content-security-policy']).toContain("style-src 'self'");
+    expect(res.headers['content-security-policy']).toContain('style-src \'self\'');
   });
 
   it('allows data: URIs for images', async () => {
     const res = await req('get', '/health');
-    expect(res.headers['content-security-policy']).toContain("img-src 'self' data:");
+    expect(res.headers['content-security-policy']).toContain('img-src \'self\' data:');
   });
 
   it('blocks object sources', async () => {
     const res = await req('get', '/api');
-    expect(res.headers['content-security-policy']).toContain("object-src 'none'");
+    expect(res.headers['content-security-policy']).toContain('object-src \'none\'');
   });
 
   it('blocks frame sources', async () => {
     const res = await req('get', '/api');
-    expect(res.headers['content-security-policy']).toContain("frame-src 'none'");
+    expect(res.headers['content-security-policy']).toContain('frame-src \'none\'');
   });
 
   it('restricts form-action to self', async () => {
     const res = await req('get', '/api');
-    expect(res.headers['content-security-policy']).toContain("form-action 'self'");
+    expect(res.headers['content-security-policy']).toContain('form-action \'self\'');
   });
 
   it('restricts base-uri to self', async () => {
     const res = await req('get', '/api');
-    expect(res.headers['content-security-policy']).toContain("base-uri 'self'");
+    expect(res.headers['content-security-policy']).toContain('base-uri \'self\'');
   });
 });
 

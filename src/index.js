@@ -13,8 +13,6 @@ require('dotenv').config();
 const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
 const { authenticateToken } = require('./middleware/auth');
 
-const asyncHandler = require('./utils/asyncHandler');
-const errorHandler = require('./middleware/errorHandler');
 const { callSorobanContract } = require('./services/soroban');
 
 const PORT = process.env.PORT || 3001;

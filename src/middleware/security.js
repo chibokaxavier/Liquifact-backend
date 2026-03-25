@@ -42,17 +42,17 @@ function createSecurityMiddleware() {
      */
     contentSecurityPolicy: {
       directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        mediaSrc: ["'self'"],
-        frameSrc: ["'none'"],
-        baseUri: ["'self'"],
-        formAction: ["'self'"],
+        defaultSrc: ['\'self\''],
+        scriptSrc: ['\'self\''],
+        styleSrc: ['\'self\''],
+        imgSrc: ['\'self\'', 'data:'],
+        connectSrc: ['\'self\''],
+        fontSrc: ['\'self\''],
+        objectSrc: ['\'none\''],
+        mediaSrc: ['\'self\''],
+        frameSrc: ['\'none\''],
+        baseUri: ['\'self\''],
+        formAction: ['\'self\''],
       },
     },
 

@@ -95,6 +95,10 @@ function createApp() {
 
     try {
       // Simulated remote contract call
+      /**
+       * Returns placeholder escrow data for the given invoice.
+       * @returns {Promise<Object>} The escrow state object
+       */
       const operation = async () => {
         return { invoiceId, status: 'not_found', fundedAmount: 0 };
       };
